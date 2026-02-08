@@ -1,0 +1,5 @@
+fcharset-normalizer==3.4.4
+requests
+uvicorn
+sqlalchemy
+psycopg2-binary
