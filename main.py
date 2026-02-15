@@ -3,11 +3,12 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 from pydantic import BaseModel
 from database import get_db, engine, Base
-from models import User, CasualtyMain, Insa
+from models import User, CasualtyMain, Insa, MessageLog
 import os
 import random
 import requests
 from contextlib import asynccontextmanager
+from datetime import datetime
 
 # Pydantic model for request body
 class LoginRequest(BaseModel):
@@ -18,6 +19,15 @@ class ReportRequest(BaseModel):
     srvno: str
     lat: float
     lng: float
+    timestamp: str | None = None
+
+class SubmitReportRequest(BaseModel):
+    srvno: str
+    lat: float
+    lng: float
+    report_content: str
+    weather: str
+    location: str
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -188,6 +198,8 @@ def generate_report(request: ReportRequest, db: Session = Depends(get_db)):
     # 3. Generate Report (LLM Simulation)
     # real LLM call would be here using google.generativeai
     
+    display_time = request.timestamp if request.timestamp else "2026년 2월 7일 14:30 경"
+    
     report_content = f"""
 [사망자 발생 보고서]
 
@@ -198,7 +210,7 @@ def generate_report(request: ReportRequest, db: Session = Depends(get_db)):
    - 성명: {person.nm}
 
 2. 발생일시 및 장소
-   - 일시: 2026년 2월 7일 14:30 경
+   - 일시: {display_time}
    - 장소: 위도 {request.lat:.4f}, 경도 {request.lng:.4f} 인근 작전지역
 
 3. 환경 세부사항
@@ -223,6 +235,80 @@ def generate_report(request: ReportRequest, db: Session = Depends(get_db)):
         "location": f"{request.lat:.4f}, {request.lng:.4f}",
         "person": person
     }
+
+@app.post("/submit-report")
+def submit_report(request: SubmitReportRequest, db: Session = Depends(get_db)):
+    print("/submit-report start")
+    # 1. Fetch Personnel Info
+    person = db.query(Insa).filter(Insa.srvno == request.srvno).first()
+    if not person:
+        raise HTTPException(status_code=404, detail="Personnel not found")
+
+    # Parse weather info (assuming format "Cloudy, 25°C")
+    try:
+        parts = request.weather.split(',')
+        weather_desc = parts[0].strip() if len(parts) > 0 else "Unknown"
+        temp = parts[1].strip() if len(parts) > 1 else "Unknown"
+    except:
+        weather_desc = request.weather
+        temp = None
+
+    print(person)
+
+    # 2. Insert into casualty_main
+    new_casualty = CasualtyMain(
+        srvno=person.srvno,
+        nm=person.nm,
+        rank=person.rank,
+        uc=person.uc,
+        lat=request.lat,
+        lng=request.lng,
+        weather_desc=weather_desc,
+        temp=temp
+    )
+    db.add(new_casualty)
+    
+    # 3. Insert into message_log
+    new_message = MessageLog(
+        srvno=person.srvno,
+        dt=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        msg_type="사망자 보고",
+        recipient="상급 부대 (작전처)",
+        title=f"{person.srvno} 사망 보고서",
+        content=request.report_content
+    )
+    db.add(new_message)
+    
+    db.commit()
+    
+    return {"message": "보고서가 전송되었습니다."}
+
+@app.get("/notifications")
+def get_notifications(db: Session = Depends(get_db)):
+    # Fetch notifications from MessageLog based on dt, msg_type, title
+    results = db.query(
+        MessageLog.id,
+        MessageLog.dt,
+        MessageLog.msg_type,
+        MessageLog.title,
+        MessageLog.srvno,
+        MessageLog.content,
+        MessageLog.recipient
+    ).order_by(MessageLog.dt.desc()).all()
+    
+    notifications = []
+    for row in results:
+        notifications.append({
+            "id": row.id,
+            "date": row.dt,
+            "type": row.msg_type,
+            "title": row.title,
+            "srvno": row.srvno,
+            "content": row.content,
+            "recipient": row.recipient
+        })
+        
+    return notifications
 
 @app.post("/login")
 def login(request: LoginRequest, db: Session = Depends(get_db)):

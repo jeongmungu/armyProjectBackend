@@ -20,6 +20,8 @@ class CasualtyMain(Base):
     uc = Column(String) # 부대명
     lat = Column(Float) # 위도
     lng = Column(Float) # 경도
+    weather_desc = Column(String, nullable=True) # 기상
+    temp = Column(String, nullable=True) # 기온
 
 class Insa(Base):
     __tablename__ = "insa"
@@ -29,3 +31,14 @@ class Insa(Base):
     nm = Column(String) # 이름
     rank = Column(String) # 계급
     uc = Column(String) # 부대명
+
+class MessageLog(Base):
+    __tablename__ = "message_log"
+
+    id = Column(Integer, primary_key=True, index=True)
+    srvno = Column(String, index=True) # 군번 relating to the message
+    dt = Column(String) # datetime string
+    msg_type = Column(String) # Message Type (e.g., "사망자 보고")
+    recipient = Column(String) # Recipient (e.g., "상급 부대 (작전처)")
+    title = Column(String) # Title
+    content = Column(String) # Content text
