@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from sqlalchemy import text
+from sqlalchemy.orm import Session
+from sqlalchemy import text, func
 from pydantic import BaseModel
 from database import get_db, engine, Base
 from models import User, CasualtyMain, Insa, MessageLog
@@ -309,6 +310,19 @@ def get_notifications(db: Session = Depends(get_db)):
         })
         
     return notifications
+
+@app.get("/dashboard/unit-stats")
+def get_unit_stats(db: Session = Depends(get_db)):
+    results = db.query(CasualtyMain.uc, func.count(CasualtyMain.id).label("count")).group_by(CasualtyMain.uc).all()
+    print(results)
+    stats = []
+    for uc, count in results:
+        stats.append({
+            "unit": uc,
+            "count": count
+        })
+    return stats
+
 
 @app.post("/login")
 def login(request: LoginRequest, db: Session = Depends(get_db)):
